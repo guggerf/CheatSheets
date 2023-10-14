@@ -1,0 +1,312 @@
+Credits to Dezentalschweiz Telegram channel
+
+
+
+SERVICES
+
+sudo systemctl stop bitcoind
+sudo systemctl start bitcoind
+sudo systemctl restart bitcoind
+systemctl status bitcoind
+
+sudo systemctl stop lnd
+sudo systemctl start lnd
+sudo systemctl restart lnd
+systemctl status lnd
+
+thunderhub.service
+RTL.service
+
+systemctl --type=service
+
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+
+LOGS
+
+Bitcoin:
+sudo tail /home/bitcoin/.bitcoin/debug.log -f -n 200
+sudo journalctl -f -u bitcoind
+sudo tail /home/bitcoin/.bitcoin/debug.log -f -n 200 | grep connect
+
+Lightning:
+sudo tail /home/lnd/.lnd/logs/bitcoin/mainnet/lnd.log -f
+sudo tail /home/cln/.lightning/cln.log -f -n 200
+sudo tail /home/bitcoin/.lnd/logs/bitcoin/mainnet/lnd.log -f
+sudo journalctl -f -u lnd
+lndlogs (aliases erstellt)
+sudo tail /home/bitcoin/.lnd/logs/bitcoin/mainnet/lnd.log -f -n200 | grep canceled
+
+
+Tor
+sudo journalctl -u tor@default
+
+Watchtower:
+sudo tail -f -n 200 /home/lnd/.lnd/logs/bitcoin/mainnet/lnd.log | grep WTWR  <-- Dein angebotener Tower für andere
+sudo tail -f -n 200 /home/lnd/.lnd/logs/bitcoin/mainnet/lnd.log | grep WTCL  <-- Session mit welcher du dich verbindest
+
+Alte Logs in den Archivordner bewegen:
+sudo mv /home/bitcoin/.bitcoin/debug.log /home/bitcoin/.bitcoin/debug.log.old
+
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+
+CONFIGURATION
+
+sudo nano /home/bitcoin/.bitcoin/bitcoin.conf
+sudo nano /etc/systemd/system/bitcoind.service
+
+sudo nano /data/lnd/lnd.conf
+lndconfig (aliases erstellt)
+sudo nano /etc/systemd/system/lnd.service
+
+
+Tor
+sudo nano /etc/tor/torrc
+
+Aliases (as admin or mainuser)
+nano ~/.bash_aliases --> after edit:  source ~/.bash_aliases
+
+Zeus Zerotier
+LND Conf: tlsextraip=123.45.6.7
+LNDConnect string: lndconnect --host=123.45.6.7 --port=8080
+scan QR with Zeus App. (IP must be allowed in the Zerotier account settings)
+
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+
+USEFULL COMMANDS
+
+sudo ls -l --block-size=MB /mnt/hdd/lnd/data/graph/mainnet/channel.db  <-channel.db grösse anzeigen in MB (GB, TB usw..)
+
+sudo du -h /data/lnd/data/graph/mainnet/channel.db  <-- Channel.db auf raspibolt
+
+
+##Bitcoin
+
+bitcoin-cli getconnectioncount
+bitcoin-cli getnetworkinfo
+bitcoin-cli addnode XYZ.onion add
+curl icanhazip.com  <-- meine IP
+bitcoin-cli getpeerinfo | grep  local  <-- IP welche von TOR verwendet werden.  Meine IP sollte hier nicht stehen, sonst kein anon.
+bitcoin-cli gettxoutsetinfo --> zeigt die aktuelle Menge Bitcoins im Umlauf.
+
+lncli wallet bumpfee --help
+lncli wallet bumpfee --sat_per_vbyte 10 2fek9496bb24877906e6566517732afc55c1725c54e32de0e31db830899e1916:0
+
+##Lightning LND
+
+Invoice erstellen (100k sats)
+lncli addinvoice --amt 100000 --expiry 3600
+
+Invoice bezahlen
+lncli payinvoice --pay_req=
+lncli sendpayment  --force --outgoing_chan_id=    --pay_req=
+
+PAY TO ROUTE
+https://github.com/Rings-of-Fire/ring-of-fire#pay-yourself
+
+update fees
+lncli updatechanpolicy --base_fee_msat 0 --fee_rate 0 --time_lock_delta 144 --chan_point <tx-ID>:1
+
+API (auf Node mit lncli --help zu finden)
+https://lightning.engineering/api-docs/api/lnd/index.html
+
+lncli channelbalance
+lncli listchaintxns
+lncli fwdinghistory --start_time="-1M" --max_events=5000 | jq '[.forwarding_events[].amt_out | tonumber] | add'
+
+Uptime info
+lncli listchannels | jq '.channels | map({remote_pubkey: .remote_pubkey, peer_alias: .peer_alias, chan_id: .chan_id, since: (now - (.lifetime | tonumber)) | strftime("%Y-%m-%d %H:%M:%S"), uptime_pct: (((.uptime | tonumber) / (.lifetime | tonumber)) * 100)}) | sort_by(-.uptime_pct)'
+
+Re-Enable
+lncli updatechanstatus --funding_txid <tx-ID> --output_index 1 --action enable
+lncli disconnect <pubkey>
+
+KANAL ÖFFNEN: lncli openchannel --help (INFO)
+(Beispiel mit Anita. Spendet von meinen 870154 21000 sats auf ihre Seite)
+lncli openchannel --node_key <node-ID> --connect <node-IP>:9735 --local_amt 870154 --push_amt 21000 --sat_per_byte 21
+
+(Beispiel öffnet einen Kanal mit der maximalen Anzahl lokal verfügbaren Sats)
+lncli openchannel --node_key <node-ID> --connect <node-IP>:9735 --fundmax --sat_per_vbyte 15
+
+KANAL SCHLIESSEN: lncli closechannel --help (INFO)
+Schliesst den Kanal mit einer
+lncli closechannel --funding_txid <tx-ID> --output_index 1 --sat_per_vbyte 15
+
+
+##Watchtower
+Liste:
+https://ln.lightninghoarder.net/known-lnd-watchtowers.txt
+LN+ Watchtower
+lncli wtclient add <node-ID>@<node-IP>
+
+nc -zv 34.216.52.158 9911  <-- Port-Test, ist der Tower erreichbar?
+
+in der lnd conf:
+---------------------------------
+# Watchtower
+[wtclient]
+wtclient.active=true
+wtclient.sweep-fee-rate=100
+---------------------------------
+
+Firewall:
+sudo ufw allow 9911 comment "Watchtower"   <-- um einen Tower zu betreiben, nicht nötig um einen zu nutzen.
+sudo ufw enable
+
+Turm entfernen:
+lncli wtclient remove <node-ID>@<node-IP>
+
+Watchtower DB (kann gelöscht werden bei Problemen)
+~/.lnd/data/graph/mainnet <-- location wtclient.db
+
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+
+####RECHTE VERGEBEN
+sudo chown -R bitcoin:bitcoin /data/bitcoin  <-- dieser Ordner + alle sub sind nun bitcoin:bitcoin
+
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+Addon stuff
+-------------------
+
+
+lntop
+https://github.com/edouardparis/lntop
+
+sortiere die Spalten mit a / d
+
+-------------------
+
+
+BOS
+https://github.com/alexbosworth/balanceofsatoshis
+In raspi terminal type bos to switch to user bos.
+
+bos reconnect <-- falls peers offline sind versucht bos neu zu verbinden
+
+bos rebalance --in  --in-target-outbound CAPACITY/12  --max-fee-rate 500  --minutes 10
+bos rebalance --amount 2100000 --out chan1pubkey --in chan2pubkey --max-fee xx --max-fee-rate xx --minutes 10  --avoid  --avoid
+bos rebalance --out Boltening  --in Coingate --minutes 10  --amount 500981  --max-fee-rate 600 --max-fee 120
+bos pay --max-paths 2 --max-fee 340 --out HIER DIE OUT NODE URI
+
+-------------------
+
+CHARGE-LND (als user chargelnd)
+https://github.com/accumulator/charge-lnd
+nano /home/bitcoin/charge-lnd/charge.config
+
+tipp: config textfile auf PC erstellen und sync behalten.
+/home/bitcoin/.local/bin/charge-lnd -c /home/bitcoin/charge-lnd/charge.config --dry-run
+
+BEISPIEL CONF EINTRÄGE
+
+[default]
+# 'default' is special, it is used if no other policy matches a channel
+#strategy = static
+strategy = proportional
+#fee_ppm = 21
+min_fee_ppm = 8
+max_fee_ppm = 100
+time_lock_delta=40
+max_htlc_msat_ratio = 1
+min_fee_ppm_delta = 25
+
+[mydefaults]
+# no strategy, so this only sets some defaults
+base_fee_msat = 0
+min_fee_ppm_delta = 25
+time_lock_delta=144
+
+[LNMarkets]
+# special treatment
+node.id=
+        03271338633d2d37b285dae4df40b413d8c6c791fbee7797bc5dc70812196d7d5c
+#LNMarkets 837290199342907393
+
+strategy = static
+base_fee_msat = 0
+fee_ppm = 34
+#min_fee_ppm = 21
+#max_fee_ppm = 42
+max_htlc_msat_ratio = 1
+
+[deezy.io]
+# special treatment
+node.id=
+        024bfaf0cabe7f874fd33ebf7c6f4e5385971fc504ef3f492432e9e3ec77e1b5cf
+#deezy.io 832774504985919489
+
+strategy = proportional
+base_fee_msat = 0
+min_fee_ppm = 60
+max_fee_ppm = 180
+max_htlc_msat_ratio = 1
+min_fee_ppm_delta = 25
+
+
+usw usw
+(tipp nano /home/bitcoin/charge-lnd/charge.config --line-numbers)
+
+-------------------
+
+REGOLANCER (als user regolancer)
+https://github.com/rkfg/regolancer
+
+SCRIPT: for i in {1..10}; do commandNameHere; done
+d.h. so:
+for i in {1..20}; do /home/regolancer/go/bin/regolancer --node-cache-filename leidning_chache.dat --node-cache-info --timeout-rebalance 60 --timeout-attempt 60 --timeout-info 360 --timeout-route 360 --lost-profit --amount 144981 --allow-rapid-rebalance --econ-ratio 0.75  --pfrom 50 --pto 80; done
+
+weitere Beispiele, auch ohne script:
+
+#TO PEER X
+#if it fails - remove econ-ratio and raise fees in chargelnd
+/home/regolancer/go/bin/regolancer --node-cache-filename goon_chache.dat --node-cache-info --timeout-rebalance 60 --timeout-attempt 60 --timeout-info 360 --timeout-route 360 --lost-profit --amount 342777 --probe-steps 5  --econ-ratio 0.98 --allow-rapid-rebalance --to 860905510053216257
+
+#From Peer X
+/home/regolancer/go/bin/regolancer --node-cache-filename goon_chache.dat --node-cache-info --timeout-rebalance 60 --timeout-attempt 60 --timeout-info 360 --timeout-route 360 --lost-profit --amount 42777 --econ-ratio 0.9 --allow-rapid-rebalance --from 832239042796584967
+
+/home/regolancer/go/bin/regolancer --node-cache-filename goon_chache.dat --node-cache-info --timeout-rebalance 60 --timeout-attempt 60 --timeout-info 360 --timeout-route 360 --lost-profit --econ-ratio 0.9  --from 837290199342907393 --rel-amount-to 0.35 --pto 80
+
+#XYZ to ABC
+/home/regolancer/go/bin/regolancer --node-cache-filename goon_chache.dat --node-cache-info --timeout-rebalance 60 --timeout-attempt 60 --timeout-info 360 --timeout-route 360 --lost-profit --amount 500000 --probe-steps 5 --pto 80 --from 837290199342907393 --from 852728442095992837 --from 852175387723431937 --pfrom 25 --to 860905510053216257 --fee-limit-ppm 500
+
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+Tunnelsats:
+
+Tunnelsats neustarten:
+sudo systemctl restart wg-quick@tunnelsatsv2
+
+Verbindung(Handshake testen)
+sudo wg show
+
+Port testen
+nc -zv de3.tunnelsats.com 16267 <-(dein port in der lnd.conf oder bei amboss etc)
+
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+
+UPDATE LND:
+
+cd /tmp
+wget https://github.com/lightningnetwork/lnd/releases/download/v0.16.3-beta/lnd-linux-arm64-v0.16.3-beta.tar.gz
+wget https://github.com/lightningnetwork/lnd/releases/download/v0.16.3-beta/manifest-v0.16.3-beta.txt
+wget https://github.com/lightningnetwork/lnd/releases/download/v0.16.3-beta/manifest-roasbeef-v0.16.3-beta.sig
+wget https://github.com/lightningnetwork/lnd/releases/download/v0.16.3-beta/manifest-roasbeef-v0.16.3-beta.sig.ots
+
+sha256sum --check manifest-v0.16.3-beta.txt --ignore-missing
+
+gpg --verify manifest-roasbeef-v0.16.3-beta.sig manifest-v0.16.3-beta.txt
+
+ots verify manifest-roasbeef-v0.16.3-beta.sig.ots -f manifest-roasbeef-v0.16.3-beta.sig
+
+tar -xzf lnd-linux-arm64-v0.16.3-beta.tar.gz
+
+sudo systemctl stop lnd
+
+sudo install -m 0755 -o root -g root -t /usr/local/bin lnd-linux-arm64-v0.16.3-beta/*
+
+sudo systemctl start lnd
